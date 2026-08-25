@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>DUNGEON: LAST STAND — Pixel Art Edition</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#05060b;color:#fff;font-family:"Courier New",monospace}
+body{touch-action:none}
+#game-container{position:relative;width:100vw;height:100vh;overflow:hidden}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;background:#090b12}
+#hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:min(92vw,760px);display:none;flex-direction:column;gap:6px;z-index:5;pointer-events:none}
+.topline{display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:11px;text-shadow:2px 2px #000;flex-wrap:wrap;gap:4px}
+.badge{padding:4px 8px;border:1px solid #39445c;background:rgba(7,10,18,.85);box-shadow:0 0 10px rgba(0,229,255,.1)}
+.bar-wrap{height:10px;background:#111521;border:2px solid #30384a;border-radius:4px;overflow:hidden;box-shadow:0 2px 0 #000}
+.bar{height:100%;width:100%;transition:width .12s linear}
+#xp-bar{background:linear-gradient(90deg,#00a8ff,#00e5ff)}
+#hp-bar{background:linear-gradient(90deg,#d91442,#ff3355)}
+#boss-hp-wrap{display:none;height:12px;border-color:#7d1221;background:#21070c}
+#boss-hp-bar{background:linear-gradient(90deg,#8d001e,#ff1744)}
+#boss-name{display:none;text-align:center;color:#ff5a72;font-size:11px;font-weight:bold}
+
+#missions-panel{position:absolute;bottom:14px;left:14px;width:200px;background:rgba(7,10,18,.85);border:1px solid #ffd84a;padding:8px;border-radius:6px;z-index:5;pointer-events:none;display:none}
+#missions-panel h4{color:#ffd84a;font-size:10px;margin-bottom:4px;text-transform:uppercase}
+.mission-item{font-size:9px;color:#aebbd0;margin-bottom:2px}
+.mission-item.completed{color:#00ff88;text-decoration:line-through}
+
+#exit-top-btn{position:absolute;top:10px;right:10px;z-index:100;background:#d91442;color:#fff;border:2px solid #ff5a72;width:32px;height:32px;font-weight:bold;font-size:16px;cursor:pointer;border-radius:4px}
+#save-toast{position:absolute;top:10px;left:10px;z-index:100;background:rgba(0,229,255,.15);border:1px solid #00e5ff;color:#00e5ff;padding:6px 10px;border-radius:4px;font-size:10px;font-weight:bold;display:none}
+
+/* MOBILE CONTROLS */
+#touch-controls{position:absolute;inset:0;pointer-events:none;z-index:10;display:none}
+#joystick-zone{position:absolute;bottom:20px;left:20px;width:120px;height:120px;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.3);border-radius:50%;pointer-events:auto;touch-action:none}
+#joystick-stick{position:absolute;top:35px;left:35px;width:50px;height:50px;background:rgba(0,229,255,0.6);border-radius:50%;pointer-events:none}
+#mobile-dash-btn{position:absolute;bottom:30px;right:30px;width:70px;height:70px;background:rgba(255,216,74,0.6);border:2px solid #ffd84a;border-radius:50%;display:flex;justify-content:center;align-items:center;font-weight:bold;color:#000;font-size:12px;pointer-events:auto;touch-action:none}
+
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;background:radial-gradient(circle at center,rgba(24,27,48,.92),rgba(2,3,7,.98));z-index:20;pointer-events:auto;padding:16px}
+.overlay h1{font-size:clamp(24px,5vw,48px);color:#e9f8ff;text-shadow:0 0 12px #00d9ff;text-align:center}
+.overlay h2{font-size:clamp(18px,3vw,28px);color:#ffd84a;text-align:center}
+.subtitle{color:#aebbd0;text-align:center;max-width:600px;font-size:12px}
+.btn{font:700 13px "Courier New",monospace;color:#071018;background:#00e5ff;border:0;border-bottom:4px solid #087e99;padding:10px 20px;cursor:pointer}
+.btn.secondary{background:#ffd84a;border-bottom-color:#9d7b00;color:#171000}
+.hub-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;width:min(90vw,600px)}
+.hub-card,.card{background:#171b29;border:2px solid #3a4760;border-radius:8px;padding:12px;display:flex;flex-direction:column;align-items:center;cursor:pointer;text-align:center}
+.hub-card.selected,.card.selected{border-color:#ffd84a;background:#252c42}
+.cards-container{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;max-width:95vw;max-height:60vh;overflow-y:auto}
+.card.rarity-common{border-color:#5a6478}
+.card.rarity-rare{border-color:#00a8ff}
+.card.rarity-epic{border-color:#d914ff}
+.card.rarity-legendary{border-color:#ffd84a}
+#char-screen,#pet-screen,#map-screen,#game-over-screen,#pause-screen,#upgrade-screen,#chest-screen{display:none;z-index:32}
+</style>
+</head>
+<body>
+<div id="game-container">
+<canvas id="gameCanvas"></canvas>
+<div id="save-toast">💾 SAVED</div>
+<button id="exit-top-btn">✕</button>
+
+<div id="hud">
+  <div class="topline">
+    <span class="badge" id="level-txt">LVL 1</span>
+    <span class="badge" id="hp-txt">HP 100/100</span>
+    <span class="badge" id="dmg-txt">DMG 25</span>
+    <span class="badge" id="kills-txt">KILLS 0</span>
+    <span class="badge" id="time-txt">00:00</span>
+  </div>
+  <div class="bar-wrap"><div id="xp-bar" class="bar"></div></div>
+  <div class="bar-wrap"><div id="hp-bar" class="bar"></div></div>
+  <div id="boss-name">⚠ BOSS ⚠</div>
+  <div class="bar-wrap" id="boss-hp-wrap"><div id="boss-hp-bar" class="bar"></div></div>
+</div>
+
+<div id="missions-panel">
+  <h4>📜 Missions</h4>
+  <div id="missions-list"></div>
+</div>
+
+<!-- TOUCH CONTROLS FOR MOBILE -->
+<div id="touch-controls">
+  <div id="joystick-zone"><div id="joystick-stick"></div></div>
+  <div id="mobile-dash-btn">DASH</div>
+</div>
+
+<div id="home-screen" class="overlay">
+  <h1>DUNGEON STAND</h1>
+  <div class="subtitle">SELECT LOADOUT & PLAY</div>
+  <div class="hub-grid">
+    <div class="hub-card" id="btn-open-char"><h3>⚔️ CHARS</h3><p id="selected-char-txt">Knight</p></div>
+    <div class="hub-card" id="btn-open-pet"><h3>🐾 PETS</h3><p id="selected-pet-txt">None</p></div>
+    <div class="hub-card" id="btn-open-map"><h3>🗺️ MAPS</h3><p id="selected-map-txt">Gloom Crypt</p></div>
+  </div>
+  <button class="btn secondary" id="start-run-btn" style="font-size:16px;padding:12px 30px;">PLAY</button>
+</div>
+
+<div id="char-screen" class="overlay"><h2>CHARACTERS</h2><div class="cards-container" id="char-cards"></div><button class="btn" id="close-char-btn">BACK</button></div>
+<div id="pet-screen" class="overlay"><h2>PETS</h2><div class="cards-container" id="pet-cards"></div><button class="btn" id="close-pet-btn">BACK</button></div>
+<div id="map-screen" class="overlay"><h2>MAPS</h2><div class="cards-container" id="map-cards"></div><button class="btn" id="close-map-btn">BACK</button></div>
+
+<div id="upgrade-screen" class="overlay">
+  <h2>LEVEL UP!</h2>
+  <div class="cards-container" id="cards-wrapper"></div>
+</div>
+
+<div id="chest-screen" class="overlay">
+  <h2 style="color:#ffd84a;">📦 CHEST OPENED!</h2>
+  <div class="cards-container" id="chest-cards-wrapper"></div>
+</div>
+
+<div id="pause-screen" class="overlay">
+  <h2>PAUSED</h2>
+  <button class="btn" id="resume-btn">RESUME</button>
+</div>
+
+<div id="game-over-screen" class="overlay">
+  <h1>GAME OVER</h1>
+  <div class="subtitle" id="final-stats"></div>
+  <button class="btn secondary" id="restart-btn">HUB</button>
+</div>
+</div>
+
+<script>
+const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id);
+let W,H,dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=innerWidth;H=innerHeight;
+  canvas.width=Math.floor(W*dpr);canvas.height=Math.floor(H*dpr);
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize);resize();
+
+// Mobile Touch Control Logic
+let touchMoveDir = { x: 0, y: 0 };
+const joyZone = $("joystick-zone"), joyStick = $("joystick-stick");
+let joyActive = false, joyTouchId = null, joyCenter = { x: 0, y: 0 };
+
+joyZone.addEventListener("touchstart", e => {
+  if (joyActive) return;
+  const touch = e.changedTouches[0];
+  joyTouchId = touch.identifier;
+  joyActive = true;
+  const rect = joyZone.getBoundingClientRect();
+  joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  updateJoystick(touch);
+}, { passive: false });
+
+joyZone.addEventListener("touchmove", e => {
+  if (!joyActive) return;
+  for (let t of e.changedTouches) {
+    if (t.identifier === joyTouchId) {
+      updateJoystick(t);
+      break;
+    }
+  }
+}, { passive: false });
+
+const resetJoy = () => {
+  joyActive = false; joyTouchId = null;
+  joyStick.style.transform = "translate(0px, 0px)";
+  touchMoveDir = { x: 0, y: 0 };
+};
+joyZone.addEventListener("touchend", resetJoy);
+joyZone.addEventListener("touchcancel", resetJoy);
+
+function updateJoystick(touch) {
+  let dx = touch.clientX - joyCenter.x;
+  let dy = touch.clientY - joyCenter.y;
+  let dist = Math.hypot(dx, dy);
+  let maxDist = 35;
+  if (dist > maxDist) {
+    dx = (dx / dist) * maxDist;
+    dy = (dy / dist) * maxDist;
+  }
+  joyStick.style.transform = `translate(${dx}px, ${dy}px)`;
+  touchMoveDir = { x: dx / maxDist, y: dy / maxDist };
+}
+
+$("mobile-dash-btn").addEventListener("touchstart", e => {
+  e.preventDefault(); dash();
+});
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function playSound(type) {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+  if (type === 'shoot') {
+    osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.08);
+    gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+    osc.start(now); osc.stop(now + 0.08);
+  } else if (type === 'hit') {
+    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(120, now); osc.frequency.linearRampToValueAtTime(40, now + 0.05);
+    gain.gain.setValueAtTime(0.12, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+    osc.start(now); osc.stop(now + 0.05);
+  } else if (type === 'gem') {
+    osc.type = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.06);
+    gain.gain.setValueAtTime(0.08, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.06);
+    osc.start(now); osc.stop(now + 0.06);
+  } else if (type === 'dash') {
+    osc.type = 'triangle'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(60, now + 0.15);
+    gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now); osc.stop(now + 0.15);
+  } else if (type === 'levelup') {
+    osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.setValueAtTime(450, now + 0.08); osc.frequency.setValueAtTime(600, now + 0.16);
+    gain.gain.setValueAtTime(0.15, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+    osc.start(now); osc.stop(now + 0.3);
+  } else if (type === 'heal') {
+    osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.15);
+    gain.gain.setValueAtTime(0.08, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now); osc.stop(now + 0.15);
+  } else if (type === 'bossalert') {
+    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(80, now); osc.frequency.setValueAtTime(120, now + 0.2); osc.frequency.setValueAtTime(80, now + 0.4);
+    gain.gain.setValueAtTime(0.15, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+    osc.start(now); osc.stop(now + 0.4);
+  } else if (type === 'explode') {
+    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(30, now + 0.3);
+    gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+    osc.start(now); osc.stop(now + 0.3);
+  }
+}
+
+let saveData = { selectedChar: "knight", selectedPet: "none", selectedMap: "crypt" };
+function saveGame(){ localStorage.setItem("DUNGEON_LAST_STAND_SAVE", JSON.stringify(saveData)); const t=$("save-toast"); t.style.display="block"; setTimeout(()=>t.style.display="none",1500); }
+function loadGame(){ const l=localStorage.getItem("DUNGEON_LAST_STAND_SAVE"); if(l) saveData=JSON.parse(l); updateUI(); }
+
+const CHARACTERS = {
+  knight: { name: "Knight", icon: "⚔️", hp: 120, speed: 180, damage: 25, desc: "Balanced warrior." },
+  ranger: { name: "Ranger", icon: "🏹", hp: 85, speed: 220, damage: 20, desc: "Fast & agile." },
+  mage: { name: "Mage", icon: "🔮", hp: 75, speed: 190, damage: 35, desc: "High spell power." },
+  barbarian: { name: "Barbarian", icon: "🪓", hp: 150, speed: 160, damage: 30, desc: "High health." },
+  assassin: { name: "Assassin", icon: "🗡️", hp: 70, speed: 250, damage: 40, desc: "Super fast." }
+};
+
+const PETS = {
+  none: { name: "None", icon: "🚫", desc: "No ability." },
+  phoenix: { name: "Phoenix", icon: "🦅", desc: "Fire aura." },
+  bat: { name: "Bat", icon: "🦇", desc: "Shadow attack." },
+  wolf: { name: "Wolf", icon: "🐺", desc: "Speed & damage boost." },
+  wisp: { name: "Wisp", icon: "✨", desc: "XP boost." }
+};
+
+const MAPS = {
+  crypt: { name: "Gloom Crypt", icon: "🏛️", bg: "#090b12", grid: "#141827", hazards: false },
+  lava: { name: "Lava Cavern", icon: "🌋", bg: "#140707", grid: "#2d1010", hazards: true },
+  forest: { name: "Shadow Forest", icon: "🌲", bg: "#070f07", grid: "#152515", hazards: true },
+  crystal: { name: "Crystal Cavern", icon: "💎", bg: "#0a0a18", grid: "#1a1a35", hazards: false }
+};
+
+function updateUI(){
+  $("selected-char-txt").textContent = CHARACTERS[saveData.selectedChar].name;
+  $("selected-pet-txt").textContent = PETS[saveData.selectedPet].name;
+  $("selected-map-txt").textContent = MAPS[saveData.selectedMap].name;
+}
+
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.code]=true;
+  if(e.code==="KeyP"&&!e.repeat)togglePause();
+  if(e.code==="Space"&&!e.repeat)dash();
+});
+addEventListener("keyup",e=>keys[e.code]=false);
+
+let player, enemies, projectiles, gems, particles, hazards, healthOrbs, activeBoss, damageTexts, enemyProjectiles, props;
+let chests, activeMissions;
+let gameRunning=false, isPaused=false, isGameOver=false, lastTime=0, runTime=0, spawnClock=0, bossSpawnedAt=0, screenShake=0;
+
+const upgrades=[
+ {icon:"⚔",title:"SHARP BLADE",desc:"+15 damage",rarity:"common",apply:()=>player.damage+=15},
+ {icon:"⚡",title:"RAPID FIRE",desc:"Attack 15% faster",rarity:"common",apply:()=>player.attackInterval=Math.max(.12,player.attackInterval*.85)},
+ {icon:"🛡",title:"HEAVY ARMOR",desc:"+3 armor",rarity:"common",apply:()=>player.armor+=3},
+ {icon:"❤",title:"VITALITY",desc:"+30 HP & heal",rarity:"rare",apply:()=>{player.maxHp+=30;player.hp=player.maxHp;playSound('heal')}},
+ {icon:"👟",title:"SWIFT BOOTS",desc:"+25 speed",rarity:"common",apply:()=>player.speed+=25},
+ {icon:"🔥",title:"FIRE ORBIT",desc:"+1 Orbit Attack",rarity:"rare",apply:()=>player.orbiters.count++},
+ {icon:"🧲",title:"MAGNET",desc:"+70 XP range",rarity:"common",apply:()=>player.pickupRange+=70},
+ {icon:"💥",title:"CRIT BLOW",desc:"+10% Crit",rarity:"rare",apply:()=>player.crit+=0.1},
+ {icon:"💚",title:"LIFE STEAL",desc:"Heal 5% dmg",rarity:"epic",apply:()=>player.lifesteal=0.05},
+ {icon:"🔫",title:"DOUBLE SHOT",desc:"+1 projectile",rarity:"epic",apply:()=>player.extraShots+=1},
+ {icon:"💫",title:"HASTE",desc:"30% dash cooldown",rarity:"rare",apply:()=>player.dashCooldownMax*=0.7},
+ {icon:"🌟",title:"XP BLESSING",desc:"+25% XP",rarity:"rare",apply:()=>player.xpBonus=1.25},
+ {icon:"👑",title:"ELITE",desc:"Stats +10%",rarity:"legendary",apply:()=>{player.speed*=1.1;player.maxHp=Math.floor(player.maxHp*1.1);player.hp=Math.floor(player.hp*1.1);player.damage=Math.floor(player.damage*1.1)}}
+];
+
+function generateMissions() {
+  const pool = [
+    { id:"kills", desc:"Defeat 30 Enemies", current:0, target:30, reward:"xp", completed:false },
+    { id:"gems", desc:"Collect 20 Gems", current:0, target:20, reward:"heal", completed:false },
+    { id:"time", desc:"Survive for 60s", current:0, target:60, reward:"chest", completed:false },
+    { id:"boss", desc:"Defeat Boss", current:0, target:1, reward:"chest", completed:false }
+  ];
+  pool.sort(()=>Math.random()-0.5);
+  activeMissions = pool.slice(0, 3);
+  renderMissionsUI();
+}
+
+function updateMissionProgress(id, amount=1) {
+  if(!activeMissions) return;
+  activeMissions.forEach(m => {
+    if(m.id === id && !m.completed) {
+      if(id === "time") m.current = Math.floor(runTime);
+      else m.current += amount;
+      if(m.current >= m.target) {
+        m.current = m.target;
+        m.completed = true;
+        claimMissionReward(m);
+      }
+    }
+  });
+  renderMissionsUI();
+}
+
+function claimMissionReward(m) {
+  playSound('levelup');
+  if(m.reward === "xp") player.xp += 50;
+  else if(m.reward === "heal") { player.hp = Math.min(player.maxHp, player.hp + 40); playSound('heal'); }
+  else if(m.reward === "chest") chests.push({ x: player.x + (Math.random()-0.5)*80, y: player.y + (Math.random()-0.5)*80 });
+}
+
+function renderMissionsUI() {
+  const list = $("missions-list");
+  if(!list) return;
+  list.innerHTML = "";
+  activeMissions.forEach(m => {
+    const item = document.createElement("div");
+    item.className = "mission-item" + (m.completed ? " completed" : "");
+    item.innerHTML = `• ${m.desc} (${m.current}/${m.target})`;
+    list.appendChild(item);
+  });
+}
+
+function resetGame(){
+  const char = CHARACTERS[saveData.selectedChar];
+  player={
+    x:0,y:0,speed:char.speed,hp:char.hp,maxHp:char.hp,armor:0,damage:char.damage,
+    level:1,xp:0,xpToNext:15,kills:0,attackTimer:0,attackInterval:.5,iframeTimer:0,
+    facing:1,dashTimer:0,dashCooldown:0,dashCooldownMax:1.25, walkCycle:0,
+    projectileSize:5,pickupRange:140,crit:char.name==="Assassin"?0.15:0.05,
+    lifesteal:0,extraShots:0,xpBonus:1,
+    orbiters:{count:0, angle:0, radius:65, speed:3, damage:12, hitCooldowns:new Map()}
+  };
+
+  if(saveData.selectedPet === "phoenix") player.orbiters.count = 1;
+  if(saveData.selectedPet === "bat") player.orbiters.count = 1;
+  if(saveData.selectedPet === "wolf") { player.speed += 30; player.damage += 8; }
+  if(saveData.selectedPet === "wisp") { player.orbiters.count = 1; player.xpBonus = 1.2; }
+
+  enemies=[]; projectiles=[]; gems=[]; particles=[]; hazards=[]; healthOrbs=[]; activeBoss=null; damageTexts=[]; enemyProjectiles=[]; props=[]; chests=[];
+  runTime=0; spawnClock=0; bossSpawnedAt=0; screenShake=0; isPaused=false; isGameOver=false;
+
+  if(MAPS[saveData.selectedMap].hazards) {
+    for(let i=0; i<12; i++) hazards.push({x:(Math.random()-.5)*1200, y:(Math.random()-.5)*1200, r:22});
+  }
+  for(let i=0; i<25; i++) props.push({ x: (Math.random()-.5)*2000, y: (Math.random()-.5)*2000, type: saveData.selectedMap });
+
+  generateMissions();
+  $("game-over-screen").style.display="none"; $("pause-screen").style.display="none"; $("upgrade-screen").style.display="none"; $("chest-screen").style.display="none";
+  $("missions-panel").style.display="block";
+  $("touch-controls").style.display="block";
+  updateHUD();
+}
+
+function startRun(){
+  resetGame(); $("home-screen").style.display="none"; $("hud").style.display="flex"; gameRunning=true; lastTime=performance.now(); requestAnimationFrame(loop);
+}
+
+$("start-run-btn").onclick = startRun;
+$("restart-btn").onclick = () => { $("game-over-screen").style.display="none"; $("home-screen").style.display="flex"; };
+$("resume-btn").onclick = () => togglePause();
+$("exit-top-btn").onclick = () => { saveGame(); gameRunning=false; $("hud").style.display="none"; $("missions-panel").style.display="none"; $("touch-controls").style.display="none"; $("home-screen").style.display="flex"; };
+
+function buildCards(containerId, dataset, selectedKey, onSelect) {
+  const container = $(containerId);
+  container.innerHTML = "";
+  for (const [key, item] of Object.entries(dataset)) {
+    const card = document.createElement("div");
+    card.className = "card" + (key === selectedKey ? " selected" : "");
+    card.innerHTML = `<div style="font-size:24px;margin-bottom:4px;">${item.icon}</div><h3>${item.name}</h3><p style="font-size:10px;color:#aebbd0;">${item.desc}</p>`;
+    card.onclick = () => { onSelect(key); buildCards(containerId, dataset, key, onSelect); };
+    container.appendChild(card);
+  }
+}
+
+$("btn-open-char").onclick = () => { buildCards("char-cards", CHARACTERS, saveData.selectedChar, k => { saveData.selectedChar = k; saveGame(); updateUI(); }); $("char-screen").style.display = "flex"; };
+$("close-char-btn").onclick = () => $("char-screen").style.display = "none";
+$("btn-open-pet").onclick = () => { buildCards("pet-cards", PETS, saveData.selectedPet, k => { saveData.selectedPet = k; saveGame(); updateUI(); }); $("pet-screen").style.display = "flex"; };
+$("close-pet-btn").onclick = () => $("pet-screen").style.display = "none";
+$("btn-open-map").onclick = () => { buildCards("map-cards", MAPS, saveData.selectedMap, k => { saveData.selectedMap = k; saveGame(); updateUI(); }); $("map-screen").style.display = "flex"; };
+$("close-map-btn").onclick = () => $("map-screen").style.display = "none";
+
+function togglePause(){
+  if(!gameRunning||isGameOver||$("upgrade-screen").style.display==="flex"||$("chest-screen").style.display==="flex")return;
+  isPaused=!isPaused; $("pause-screen").style.display=isPaused?"flex":"none";
+  if(!isPaused){lastTime=performance.now(); requestAnimationFrame(loop);}
+}
+
+function dash(){
+  if(!gameRunning||isPaused||isGameOver||player.dashCooldown>0)return;
+  let dx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0) || touchMoveDir.x;
+  let dy=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0) || touchMoveDir.y;
+  if(!dx&&!dy)dx=player.facing;
+  let len=Math.hypot(dx,dy); dx/=len; dy/=len;
+  player.x+=dx*145; player.y+=dy*145; player.dashCooldown=player.dashCooldownMax; player.iframeTimer=.35;
+  burst(player.x,player.y,16,"#00e5ff",120); screenShake=5; playSound('dash');
+}
+
+function burst(x,y,n,color,power=90){
+  for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=Math.random()*power;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.35+Math.random()*.45,max:.8,color,size:2+Math.random()*3});
+  }
+}
+
+function addDamageText(x, y, val, isCrit) {
+  damageTexts.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*10, val: Math.round(val), life: 0.8, maxLife: 0.8, vy: -60, color: isCrit ? "#ffd84a" : "#ffffff", size: isCrit ? 18 : 12 });
+}
+
+function spawnEnemy(){
+  const a=Math.random()*Math.PI*2, dist=Math.max(W,H)*.55+90;
+  const elite=Math.random()<Math.min(.03+player.level*.004,.12);
+  const types = ["slime", "skeleton", "archer", "knight", "bomber"];
+  const type = types[Math.floor(Math.random()*types.length)];
+  let speed = (elite?88:68)+player.level*3;
+  if(type==="archer") speed += 20;
+  if(type==="knight") speed -= 10;
+  if(type==="bomber") speed += 50;
+  let hp = (elite?75:30)+player.level*(elite?18:12);
+  if(type==="knight") hp += 25;
+  if(type==="bomber") hp = Math.floor(hp * 0.7);
+
+  enemies.push({ x:player.x+Math.cos(a)*dist, y:player.y+Math.sin(a)*dist, radius:elite?16:12, speed, hp, maxHp:hp, elite, type, attackTimer:0, ranged: type === "archer", fuseTimer: 0, fusing: false });
+}
+
+function spawnBoss(){
+  playSound('bossalert');
+  const a=Math.random()*Math.PI*2, hp=350+player.level*110;
+  activeBoss={x:player.x+Math.cos(a)*360, y:player.y+Math.sin(a)*360, radius:30, speed:72+player.level*2, hp, maxHp:hp, isBoss:true, phase:1, attackTimer:0};
+  enemies.push(activeBoss); bossSpawnedAt=player.level; burst(activeBoss.x,activeBoss.y,35,"#ff1744",160); screenShake=10;
+}
+
+function fire(){
+  if(!enemies.length)return;
+  let nearest=null, min=Infinity;
+  for(const e of enemies){let d=Math.hypot(e.x-player.x,e.y-player.y);if(d<min){min=d;nearest=e}}
+  if(!nearest)return;
+  const a=Math.atan2(nearest.y-player.y,nearest.x-player.x);
+  const shots = 1 + player.extraShots;
+  for(let s=0;s<shots;s++){
+    const spread = shots>1 ? (s-(shots-1)/2)*0.15 : 0;
+    const angle = a + spread;
+    let dmg = player.damage;
+    let isCrit = Math.random() < player.crit;
+    if(isCrit) { dmg *= 1.5; screenShake=3; }
+    projectiles.push({x:player.x,y:player.y,vx:Math.cos(angle)*560,vy:Math.sin(angle)*560,radius:player.projectileSize,life:1.4,damage:dmg, isCrit});
+  }
+  player.attackTimer=0; playSound('shoot');
+}
+
+function getEnemyColor(type, elite) {
+  if(elite) return "#b900ff";
+  if(type==="slime") return "#00c96b";
+  if(type==="skeleton") return "#d7d7d7";
+  if(type==="archer") return "#5a3d2b";
+  if(type==="knight") return "#445577";
+  if(type==="bomber") return "#ff0000";
+  return "#ff1744";
+}
+
+function killEnemy(e,index){
+  burst(e.x, e.y, e.isBoss ? 40 : 15, getEnemyColor(e.type, e.elite), e.isBoss ? 150 : 100);
+  if(e.isBoss){
+    activeBoss=null;$("boss-hp-wrap").style.display="none";$("boss-name").style.display="none";
+    healthOrbs.push({x:e.x,y:e.y,value:30}); chests.push({ x: e.x, y: e.y }); updateMissionProgress("boss", 1);
+  }
+  updateMissionProgress("kills", 1);
+  gems.push({x:e.x,y:e.y,value:e.isBoss?70:(e.elite?18:10),phase:Math.random()*6.28});
+  if(Math.random() < 0.08 || e.elite) healthOrbs.push({x:e.x,y:e.y,value:e.elite?15:8});
+  player.kills++; enemies.splice(index,1);
+}
+
+function openChestOverlay() {
+  isPaused = true; const wrap = $("chest-cards-wrapper"); wrap.innerHTML = "";
+  const highTierPool = upgrades.filter(u => u.rarity === "epic" || u.rarity === "legendary");
+  highTierPool.sort(() => Math.random() - 0.5);
+  highTierPool.slice(0, 3).forEach(upg => {
+    const c = document.createElement("div"); c.className = "card rarity-" + upg.rarity;
+    c.innerHTML = `<div style="font-size:24px;">${upg.icon}</div><h3>${upg.title}</h3><p style="font-size:10px;">${upg.desc}</p>`;
+    c.onclick = () => { upg.apply(); $("chest-screen").style.display = "none"; isPaused = false; lastTime = performance.now(); requestAnimationFrame(loop); };
+    wrap.appendChild(c);
+  });
+  $("chest-screen").style.display = "flex";
+}
+
+function update(dt){
+  runTime+=dt; player.iframeTimer=Math.max(0,player.iframeTimer-dt); player.dashCooldown=Math.max(0,player.dashCooldown-dt);
+  screenShake=Math.max(0,screenShake-dt*18); updateMissionProgress("time");
+
+  let dx = ((keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)) || touchMoveDir.x;
+  let dy = ((keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0)) || touchMoveDir.y;
+  if(dx||dy){
+    let len=Math.hypot(dx,dy); if(len>1){dx/=len; dy/=len;}
+    player.x+=dx*player.speed*dt; player.y+=dy*player.speed*dt;
+    if(dx)player.facing=dx>0?1:-1; player.walkCycle += dt * 12;
+  } else { player.walkCycle = 0; }
+
+  player.attackTimer+=dt; if(player.attackTimer>=player.attackInterval)fire();
+
+  for(const h of hazards){
+    if(Math.hypot(player.x-h.x, player.y-h.y) < h.r+10 && player.iframeTimer<=0){
+      player.hp-=8; player.iframeTimer=.4; screenShake=6; playSound('hit');
+      if(player.hp<=0){endGame();return;}
+    }
+  }
+
+  if(player.orbiters.count > 0){
+    player.orbiters.angle += player.orbiters.speed * dt;
+    const step = (Math.PI * 2) / player.orbiters.count;
+    for(let i=0; i<player.orbiters.count; i++){
+      const orbX = player.x + Math.cos(player.orbiters.angle + i*step)*player.orbiters.radius;
+      const orbY = player.y + Math.sin(player.orbiters.angle + i*step)*player.orbiters.radius;
+      for(let j=enemies.length-1; j>=0; j--){
+        const e = enemies[j];
+        if(Math.hypot(orbX-e.x, orbY-e.y) < e.radius+10){
+          const cdKey = i+"_"+j;
+          if(!player.orbiters.hitCooldowns.has(cdKey)){
+            e.hp -= player.orbiters.damage; playSound('hit'); addDamageText(e.x, e.y, player.orbiters.damage, false);
+            if(e.hp<=0) killEnemy(e,j); player.orbiters.hitCooldowns.set(cdKey, 0.3);
+          }
+        }
+      }
+    }
+    for(let [k,v] of player.orbiters.hitCooldowns){ v -= dt; if(v<=0) player.orbiters.hitCooldowns.delete(k); else player.orbiters.hitCooldowns.set(k,v); }
+  }
+
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p=projectiles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt; let hit=false;
+    for(let j=enemies.length-1;j>=0;j--){
+      const e=enemies[j];
+      if(Math.hypot(p.x-e.x,p.y-e.y)<p.radius+e.radius){
+        e.hp-=p.damage; addDamageText(e.x, e.y, p.damage, p.isCrit);
+        if(player.lifesteal>0) player.hp = Math.min(player.maxHp, player.hp + p.damage*player.lifesteal);
+        playSound('hit'); if(e.hp<=0)killEnemy(e,j); hit=true; break;
+      }
+    }
+    if(hit||p.life<=0)projectiles.splice(i,1);
+  }
+
+  for(let i=enemies.length-1; i>=0; i--){
+    const e = enemies[i], distToPlayer = Math.hypot(player.x-e.x, player.y-e.y), a=Math.atan2(player.y-e.y,player.x-e.x);
+    if(e.type === "bomber") {
+      if(distToPlayer < 45) e.fusing = true;
+      if(e.fusing) {
+        e.fuseTimer += dt;
+        if(e.fuseTimer >= 0.8) {
+          playSound('explode'); burst(e.x, e.y, 30, "#ff4400", 180); screenShake = 12;
+          if(distToPlayer < 85 && player.iframeTimer <= 0) { player.hp -= Math.max(15, 35 - player.armor); player.iframeTimer = .5; if(player.hp <= 0) { endGame(); return; } }
+          for(let j=enemies.length-1; j>=0; j--){ if(i !== j && Math.hypot(e.x-enemies[j].x, e.y-enemies[j].y) < 90) { enemies[j].hp -= 60; addDamageText(enemies[j].x, enemies[j].y, 60, true); if(enemies[j].hp <= 0) killEnemy(enemies[j], j); } }
+          enemies.splice(i,1); continue;
+        }
+      } else { e.x+=Math.cos(a)*e.speed*dt; e.y+=Math.sin(a)*e.speed*dt; }
+    } else if(e.ranged) {
+      if(distToPlayer > 300) { e.x+=Math.cos(a)*e.speed*dt; e.y+=Math.sin(a)*e.speed*dt; }
+      else if (distToPlayer < 220) { e.x-=Math.cos(a)*e.speed*0.8*dt; e.y-=Math.sin(a)*e.speed*0.8*dt; }
+      e.attackTimer += dt;
+      if(e.attackTimer > 1.8) { e.attackTimer = 0; enemyProjectiles.push({x:e.x, y:e.y, vx:Math.cos(a)*320, vy:Math.sin(a)*320, life:2, damage: 8 + player.level}); }
+    } else { e.x+=Math.cos(a)*e.speed*dt; e.y+=Math.sin(a)*e.speed*dt; }
+
+    if(e.isBoss && e.hp < e.maxHp*0.5 && e.phase===1) { e.phase=2; e.speed*=1.2; burst(e.x,e.y,30,"#ff0044",120); }
+    if(player.iframeTimer<=0 && distToPlayer<14+e.radius && !e.ranged && e.type!=="bomber"){
+      player.hp-=Math.max(2,(e.isBoss?25:e.type==="knight"?15:10)-player.armor); player.iframeTimer=.5; playSound('hit'); screenShake=5;
+      if(player.hp<=0){endGame();return;}
+    }
+  }
+
+  for(let i=enemyProjectiles.length-1; i>=0; i--) {
+    const ep = enemyProjectiles[i]; ep.x += ep.vx*dt; ep.y += ep.vy*dt; ep.life -= dt;
+    if(Math.hypot(ep.x-player.x, ep.y-player.y) < 14) {
+      if(player.iframeTimer <= 0) { player.hp -= Math.max(2, ep.damage - player.armor); player.iframeTimer = .5; playSound('hit'); screenShake=5; if(player.hp<=0){endGame();return;} }
+      enemyProjectiles.splice(i,1);
+    } else if (ep.life <= 0) enemyProjectiles.splice(i,1);
+  }
+
+  spawnClock+=dt; if(enemies.length<40 && spawnClock>.6){spawnClock=0;spawnEnemy();}
+  if(player.level>=5 && player.level%5===0 && !activeBoss && bossSpawnedAt!==player.level) spawnBoss();
+
+  for(let i=gems.length-1;i>=0;i--){
+    const g=gems[i];
+    if(Math.hypot(player.x-g.x,player.y-g.y)<player.pickupRange){ const a=Math.atan2(player.y-g.y,player.x-g.x); g.x+=Math.cos(a)*400*dt; g.y+=Math.sin(a)*400*dt; }
+    if(Math.hypot(player.x-g.x,player.y-g.y)<20){
+      player.xp+=Math.floor(g.value*player.xpBonus); updateMissionProgress("gems", 1); gems.splice(i,1); playSound('gem');
+      if(player.xp>=player.xpToNext){ player.level++; player.xp-=player.xpToNext; player.xpToNext=Math.floor(player.xpToNext*1.45+5); playSound('levelup'); triggerUpgradeMenu(); return; }
+    }
+  }
+
+  for(let i=healthOrbs.length-1;i>=0;i--){
+    const h=healthOrbs[i];
+    if(Math.hypot(player.x-h.x,player.y-h.y)<player.pickupRange){ const a=Math.atan2(player.y-h.y,player.x-h.x); h.x+=Math.cos(a)*300*dt; h.y+=Math.sin(a)*300*dt; }
+    if(Math.hypot(player.x-h.x,player.y-h.y)<18){ player.hp=Math.min(player.maxHp,player.hp+h.value); healthOrbs.splice(i,1); playSound('heal'); }
+  }
+
+  for(let i=chests.length-1; i>=0; i--){
+    if(Math.hypot(player.x-chests[i].x, player.y-chests[i].y) < 22) { chests.splice(i,1); playSound('levelup'); openChestOverlay(); return; }
+  }
+
+  for(let i=particles.length-1;i>=0;i--){ const q=particles[i]; q.life-=dt; q.x+=q.vx*dt; q.y+=q.vy*dt; q.vx*=0.92; q.vy*=0.92; if(q.life<=0)particles.splice(i,1); }
+  for(let i=damageTexts.length-1;i>=0;i--){ const t=damageTexts[i]; t.life-=dt; t.y+=t.vy*dt; t.vy*=0.95; if(t.life<=0)damageTexts.splice(i,1); }
+  updateHUD();
+}
+
+function triggerUpgradeMenu(){
+  isPaused=true; const wrap=$("cards-wrapper"); wrap.innerHTML="";
+  const pool = [...upgrades]; pool.sort(()=>Math.random()-0.5);
+  pool.slice(0, 3).forEach(upg=>{
+    const c=document.createElement("div"); c.className="card rarity-" + upg.rarity;
+    c.innerHTML=`<div style="font-size:24px;">${upg.icon}</div><h3>${upg.title}</h3><p style="font-size:10px;">${upg.desc}</p>`;
+    c.onclick=()=>{ upg.apply(); $("upgrade-screen").style.display="none"; isPaused=false; lastTime=performance.now(); requestAnimationFrame(loop); };
+    wrap.appendChild(c);
+  });
+  $("upgrade-screen").style.display="flex";
+}
+
+function updateHUD(){
+  $("xp-bar").style.width=Math.min(100,(player.xp/player.xpToNext)*100)+"%";
+  $("hp-bar").style.width=Math.max(0,(player.hp/player.maxHp)*100)+"%";
+  $("hp-txt").textContent=`HP ${Math.ceil(player.hp)}/${player.maxHp}`;
+  $("level-txt").textContent="LVL "+player.level; $("dmg-txt").textContent="DMG "+Math.round(player.damage);
+  $("kills-txt").textContent="KILLS "+player.kills; $("time-txt").textContent=Math.floor(runTime)+"s";
+  if(activeBoss){
+    $("boss-name").style.display="block"; $("boss-hp-wrap").style.display="block";
+    $("boss-hp-bar").style.width=Math.max(0,(activeBoss.hp/activeBoss.maxHp)*100)+"%";
+  }
+}
+
+function drawPixelPlayer(){
+  ctx.save(); ctx.translate(player.x, player.y + Math.sin(player.walkCycle)*2);
+  if(player.facing < 0) ctx.scale(-1, 1);
+  const charKey = saveData.selectedChar;
+  if(charKey === "knight") {
+    ctx.fillStyle = "#3d5269"; ctx.fillRect(-8, -10, 16, 16); ctx.fillStyle = "#ffd080"; ctx.fillRect(-6, -18, 12, 10);
+    ctx.fillStyle = "#7d91a6"; ctx.fillRect(-7, -22, 14, 8); ctx.fillStyle = "#dce7ef"; ctx.fillRect(8, -12, 4, 16);
+  } else if(charKey === "ranger") {
+    ctx.fillStyle = "#2d5a27"; ctx.fillRect(-7, -9, 14, 15); ctx.fillStyle = "#ffd080"; ctx.fillRect(-5, -17, 10, 9);
+    ctx.fillStyle = "#3d7a37"; ctx.fillRect(-6, -21, 12, 7); ctx.fillStyle = "#8b5a2b"; ctx.fillRect(8, -16, 3, 20);
+  } else {
+    ctx.fillStyle = "#4b2e80"; ctx.fillRect(-7, -8, 14, 16); ctx.fillStyle = "#ffd080"; ctx.fillRect(-5, -17, 10, 9);
+    ctx.fillStyle = "#7b40d6"; ctx.fillRect(-6, -24, 12, 9);
+  }
+  ctx.restore();
+}
+
+function drawPixelEnemy(e) {
+  ctx.save(); ctx.translate(e.x, e.y);
+  if(e.isBoss) {
+    ctx.fillStyle = e.phase===2 ? "#ff0044" : "#8d001e"; ctx.fillRect(-25, -25, 50, 50);
+  } else if(e.type === "bomber") {
+    ctx.fillStyle = (e.fusing && Math.floor(runTime * 20) % 2 === 0) ? "#ffffff" : "#ff1744";
+    ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.fillStyle = getEnemyColor(e.type, e.elite); ctx.fillRect(-10, -10, 20, 20);
+  }
+  ctx.restore();
+}
+
+function render(){
+  const mapConfig = MAPS[saveData.selectedMap]; ctx.fillStyle = mapConfig.bg; ctx.fillRect(0,0,W,H);
+  ctx.save(); if(screenShake > 0) ctx.translate((Math.random()-0.5)*screenShake, (Math.random()-0.5)*screenShake);
+  ctx.translate(W/2-player.x, H/2-player.y);
+
+  for(const h of hazards){ ctx.fillStyle="#ff3300"; ctx.beginPath(); ctx.arc(h.x,h.y,h.r,0,Math.PI*2); ctx.fill(); }
+  for(const g of gems){ ctx.fillStyle="#00e5ff"; ctx.beginPath(); ctx.arc(g.x,g.y,4,0,Math.PI*2); ctx.fill(); }
+  for(const h of healthOrbs){ ctx.fillStyle="#ff3355"; ctx.beginPath(); ctx.arc(h.x,h.y,6,0,Math.PI*2); ctx.fill(); }
+  for(const c of chests) { ctx.fillStyle = "#ffd84a"; ctx.fillRect(c.x-10, c.y-8, 20, 16); }
+  for(const e of enemies) drawPixelEnemy(e);
+  for(const p of projectiles){ ctx.fillStyle = p.isCrit ? "#ffd84a" : "#00e5ff"; ctx.beginPath(); ctx.arc(p.x,p.y,p.radius,0,Math.PI*2); ctx.fill(); }
+  if(player.iframeTimer<=0 || Math.floor(runTime*20)%2===0) drawPixelPlayer();
+  for(const q of particles){ ctx.fillStyle=q.color; ctx.fillRect(q.x-q.size/2,q.y-q.size/2,q.size,q.size); }
+  for(const t of damageTexts){ ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px monospace`; ctx.fillText(t.val, t.x, t.y); }
+  ctx.restore();
+}
+
+function endGame(){
+  isGameOver=true; gameRunning=false; $("hud").style.display="none"; $("missions-panel").style.display="none"; $("touch-controls").style.display="none";
+  $("final-stats").innerHTML=`SURVIVED: <b>${Math.floor(runTime)}s</b><br>KILLS: <b>${player.kills}</b>`;
+  $("game-over-screen").style.display="flex";
+}
+
+function loop(t){
+  if(!gameRunning||isPaused)return;
+  const dt=Math.min((t-lastTime)/1000,.05); lastTime=t; update(dt); render();
+  if(gameRunning&&!isPaused)requestAnimationFrame(loop);
+}
+loadGame();
+</script>
+</body>
+</html>
